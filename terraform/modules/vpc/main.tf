@@ -1,18 +1,22 @@
 # main.tf
 
-# 1. Provider Configuration
+# VPC module: creates a simple VPC with public and private subnets,
+# an Internet Gateway, a NAT gateway for outbound access from private subnets,
+# and route tables. Exposes subnet and VPC IDs as outputs for other modules.
+
+# 1) Provider configuration (region for resources created by this module).
 provider "aws" {
-  region = "us-east-1" # Adjust if your AWS academy/account uses a different region
+  region = "us-east-1" # Change if you need a different AWS region
 }
 
-# Fetch available Availability Zones
+# 2) Lookup available AZs so we can place subnets in different zones.
 data "aws_availability_zones" "available" {
   state = "available"
 }
 
-# 2. Custom VPC
+# 3) Create the VPC. This is the network boundary for all subnets/resources.
 resource "aws_vpc" "main" {
-  cidr_block           = "10.0.0.0/16"
+  cidr_block           = "192.168.0.0/16"
   enable_dns_support   = true
   enable_dns_hostnames = true
 
@@ -21,10 +25,11 @@ resource "aws_vpc" "main" {
   }
 }
 
-# 3. Public Subnets (2 in different AZs)
+# 4) Public subnets: used for load balancers, NAT gateway, or public-facing instances.
+# We create two across separate AZs for availability.
 resource "aws_subnet" "public_1" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.1.0/24"
+  cidr_block              = "192.168.1.0/24"
   availability_zone       = data.aws_availability_zones.available.names[0]
   map_public_ip_on_launch = true
 
@@ -35,7 +40,7 @@ resource "aws_subnet" "public_1" {
 
 resource "aws_subnet" "public_2" {
   vpc_id                  = aws_vpc.main.id
-  cidr_block              = "10.0.2.0/24"
+  cidr_block              = "192.168.2.0/24"
   availability_zone       = data.aws_availability_zones.available.names[1]
   map_public_ip_on_launch = true
 
@@ -44,10 +49,22 @@ resource "aws_subnet" "public_2" {
   }
 }
 
-# 4. Private Subnets (2 in different AZs)
+resource "aws_subnet" "public_3" {
+  vpc_id                  = aws_vpc.main.id
+  cidr_block              = "192.168.3.0/24"
+  availability_zone       = data.aws_availability_zones.available.names[1]
+  map_public_ip_on_launch = true
+
+  tags = {
+    Name = "public-subnet-3"
+  }
+}
+
+# 5) Private subnets: for application instances that should not be directly reachable
+# from the internet. They will route outbound traffic through the NAT gateway.
 resource "aws_subnet" "private_1" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.10.0/24"
+  cidr_block        = "192.168.10.0/24"
   availability_zone = data.aws_availability_zones.available.names[0]
 
   tags = {
@@ -57,7 +74,7 @@ resource "aws_subnet" "private_1" {
 
 resource "aws_subnet" "private_2" {
   vpc_id            = aws_vpc.main.id
-  cidr_block        = "10.0.11.0/24"
+  cidr_block        = "192.168.11.0/24"
   availability_zone = data.aws_availability_zones.available.names[1]
 
   tags = {
@@ -65,7 +82,7 @@ resource "aws_subnet" "private_2" {
   }
 }
 
-# 5. Internet Gateway
+# 6) Internet Gateway: allows resources in public subnets to reach the internet.
 resource "aws_internet_gateway" "igw" {
   vpc_id = aws_vpc.main.id
 
@@ -74,7 +91,7 @@ resource "aws_internet_gateway" "igw" {
   }
 }
 
-# 6. Elastic IP for NAT Gateway
+# 7) Allocate an Elastic IP which the NAT gateway will use for outbound traffic.
 resource "aws_eip" "nat" {
   domain = "vpc"
 
@@ -83,12 +100,13 @@ resource "aws_eip" "nat" {
   }
 }
 
-# 7. NAT Gateway
+# 8) NAT Gateway: enables instances in private subnets to access the internet
+# (for package updates, etc.) while remaining unreachable from the internet.
 resource "aws_nat_gateway" "nat" {
   allocation_id = aws_eip.nat.id
   subnet_id     = aws_subnet.public_1.id
 
-  # Explicit dependency requirement
+  # Ensure IGW exists before creating NAT
   depends_on = [aws_internet_gateway.igw]
 
   tags = {
@@ -96,7 +114,8 @@ resource "aws_nat_gateway" "nat" {
   }
 }
 
-# 8. Public Route Table & Associations
+# 9) Public route table: routes internet-bound traffic from public subnets
+# to the Internet Gateway.
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.main.id
 
@@ -110,6 +129,7 @@ resource "aws_route_table" "public" {
   }
 }
 
+# Associate the public route table with each public subnet.
 resource "aws_route_table_association" "public_1" {
   subnet_id      = aws_subnet.public_1.id
   route_table_id = aws_route_table.public.id
@@ -120,7 +140,8 @@ resource "aws_route_table_association" "public_2" {
   route_table_id = aws_route_table.public.id
 }
 
-# 9. Private Route Table & Associations
+# 10) Private route table: sends internet-bound traffic from private subnets
+# through the NAT gateway so instances can access updates without being public.
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.main.id
 
@@ -134,6 +155,7 @@ resource "aws_route_table" "private" {
   }
 }
 
+# Associate the private route table with each private subnet.
 resource "aws_route_table_association" "private_1" {
   subnet_id      = aws_subnet.private_1.id
   route_table_id = aws_route_table.private.id
@@ -144,7 +166,7 @@ resource "aws_route_table_association" "private_2" {
   route_table_id = aws_route_table.private.id
 }
 
-# 10. Outputs
+#+ Outputs: expose useful IDs for other modules or the root module to consume
 output "vpc_id" {
   value = aws_vpc.main.id
 }
