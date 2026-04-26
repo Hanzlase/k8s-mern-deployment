@@ -5,15 +5,23 @@ module "vpc" {
   source = "./modules/vpc"
 }
 
-// EC2 module: creates a small public web server and a private instance.
-// Pass the VPC ID so EC2 resources are created inside the module's VPC.
 module "ec2" {
-  source = "./modules/ec2"
-  vpc_id = module.vpc.vpc_id
+  source            = "./modules/ec2"
+  vpc_id            = module.vpc.vpc_id
+  public_subnet_id  = module.vpc.public_subnet_ids[0]
+  private_subnet_id = module.vpc.private_subnet_ids[0] # Add this line
 }
 
-// Auto-scaling + ALB module: manages a launch template and ASG for the app.
-module "app_scaling" {
-  source = "./modules/asg_alb"
-  vpc_id = module.vpc.vpc_id
+// Temporarily disable this broken module until Task 7
+# module "app_scaling" {
+#   source = "./modules/asg_alb"
+# }
+
+// Assignment 4: Jenkins CI/CD Infrastructure
+module "jenkins" {
+  source            = "../assignment-4/jenkins" 
+  vpc_id            = module.vpc.vpc_id
+  public_subnet_id  = module.vpc.public_subnet_ids[0]  
+  private_subnet_id = module.vpc.private_subnet_ids[0] 
+  key_name          = "assignment3-key"      
 }

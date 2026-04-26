@@ -1,3 +1,15 @@
+variable "vpc_id" {
+  type = string
+}
+
+variable "public_subnet_id" { 
+  type = string 
+}
+
+variable "private_subnet_id" { 
+  type = string 
+}
+
 // EC2 module: creates a small public web instance and a private instance,
 // plus SSH key material and security groups. Outputs provide easy access info.
 
@@ -34,7 +46,7 @@ resource "local_sensitive_file" "private_key" {
 resource "aws_security_group" "public_web_sg" {
   name        = "public-web-sg"
   description = "Allow HTTP and SSH inbound traffic"
-  vpc_id      = aws_vpc.main.id // pulled from the VPC module
+  vpc_id = var.vpc_id // pulled from the VPC module
 
   ingress {
     description = "HTTP from anywhere"
@@ -68,7 +80,7 @@ resource "aws_security_group" "public_web_sg" {
 resource "aws_security_group" "private_db_sg" {
   name        = "private-db-sg"
   description = "Allow SSH only from the Bastion Host"
-  vpc_id      = aws_vpc.main.id
+  vpc_id = var.vpc_id
 
   ingress {
     description     = "SSH from Public Web SG"
@@ -94,7 +106,7 @@ resource "aws_security_group" "private_db_sg" {
 resource "aws_instance" "public_web" {
   ami                         = data.aws_ami.amazon_linux.id
   instance_type               = "t3.micro"
-  subnet_id                   = aws_subnet.public_1.id
+  subnet_id = var.public_subnet_id
   vpc_security_group_ids      = [aws_security_group.public_web_sg.id]
   key_name                    = aws_key_pair.tf_key.key_name
   associate_public_ip_address = true
@@ -107,13 +119,7 @@ resource "aws_instance" "public_web" {
               systemctl start nginx
               systemctl enable nginx
               EOF
-  user_data = <<-EOF
-              #!/bin/bash
-              yum update -y
-              yum install -y PHP:8.1
-              systemctl start PHP:8.1
-              systemctl enable PHP:8.1
-              EOF
+
 
   tags = {
     Name = "public-web-server"
@@ -124,7 +130,7 @@ resource "aws_instance" "public_web" {
 resource "aws_instance" "private_db" {
   ami                    = data.aws_ami.amazon_linux.id
   instance_type          = "t3.micro"
-  subnet_id              = aws_subnet.private_1.id
+  subnet_id = var.private_subnet_id
   vpc_security_group_ids = [aws_security_group.private_db_sg.id]
   key_name               = aws_key_pair.tf_key.key_name
 
@@ -143,3 +149,7 @@ output "private_db_ip" {
   description = "Private IP of the database server"
   value       = aws_instance.private_db.private_ip
 }
+
+
+
+
