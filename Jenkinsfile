@@ -1,23 +1,53 @@
 pipeline {
-    // This tells Jenkins to ONLY run this job on the Agent you just built
+    // Ensuring this runs on your specific AWS Agent node
     agent { label 'mern-worker' } 
+
+    environment {
+        // Your Docker Hub username
+        DOCKER_USER = 'ramday' 
+    }
 
     stages {
         stage('Clone Code') {
             steps {
-                // Pulls the latest code from your GitHub repo
+                // Pulls the MERN code from your private GitHub repo
                 checkout scm 
             }
         }
         
-        stage('Verify Worker Tools') {
+        stage('Build Docker Images') {
             steps {
-                // Proves the agent is working by checking Docker
-                sh 'echo "Running on Agent: $NODE_NAME"'
-                sh 'docker --version'
+                script {
+                    // Navigate to backend folder and build
+                    dir('backend') {
+                        sh "docker build -t ${DOCKER_USER}/mern-backend:latest ."
+                    }
+                    // Navigate to frontend folder and build
+                    dir('frontend') {
+                        sh "docker build -t ${DOCKER_USER}/mern-frontend:latest ."
+                    }
+                }
+            }
+        }
+
+        stage('Push to DockerHub') {
+            steps {
+                // 'dockerhub-creds' must match the ID you gave in Jenkins Credentials
+                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds', passwordVariable: 'DOCKER_PASS', usernameVariable: 'DOCKER_USER_ID')]) {
+                    sh "echo \$DOCKER_PASS | docker login -u \$DOCKER_USER_ID --password-stdin"
+                    
+                    // Pushing both images to your ramday account
+                    sh "docker push ${DOCKER_USER}/mern-backend:latest"
+                    sh "docker push ${DOCKER_USER}/mern-frontend:latest"
+                }
             }
         }
         
-        // We will add the actual Docker build commands here next!
+        stage('Cleanup') {
+            steps {
+                // Optional: Removes local images from the agent to save disk space
+                sh "docker rmi ${DOCKER_USER}/mern-backend:latest ${DOCKER_USER}/mern-frontend:latest"
+            }
+        }
     }
 }
