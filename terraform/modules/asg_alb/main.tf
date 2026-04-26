@@ -1,6 +1,7 @@
-# asg.tf
+// ASG + ALB module: creates a launch template and autoscaling group
+// to run web application instances with simple autoscaling rules.
 
-# 1. Launch Template (The blueprint for your servers)
+// 1) Launch Template: instance blueprint used by the ASG.
 resource "aws_launch_template" "web_app" {
   name_prefix   = "web-app-template"
   image_id      = data.aws_ami.amazon_linux.id
@@ -9,6 +10,7 @@ resource "aws_launch_template" "web_app" {
 
   vpc_security_group_ids = [aws_security_group.public_web_sg.id]
 
+  // User data installs nginx and a small stress tool for testing.
   user_data = base64encode(<<-EOF
               #!/bin/bash
               yum update -y
@@ -26,7 +28,7 @@ resource "aws_launch_template" "web_app" {
   }
 }
 
-# 2. Auto Scaling Group
+// 2) Auto Scaling Group: keeps a small fleet of instances running across public subnets.
 resource "aws_autoscaling_group" "web_asg" {
   desired_capacity    = 1
   max_size            = 3
@@ -45,7 +47,7 @@ resource "aws_autoscaling_group" "web_asg" {
   }
 }
 
-# 3. Scale Up Policy (Add a server when CPU is high)
+// 3) Scaling policy: simple step to add one instance when triggered.
 resource "aws_autoscaling_policy" "scale_up" {
   name                   = "scale-up-policy"
   scaling_adjustment     = 1
@@ -54,7 +56,7 @@ resource "aws_autoscaling_policy" "scale_up" {
   autoscaling_group_name = aws_autoscaling_group.web_asg.name
 }
 
-# 4. CloudWatch Alarm for High CPU
+// 4) CloudWatch alarm: monitors average CPU and triggers the scale-up policy.
 resource "aws_cloudwatch_metric_alarm" "high_cpu" {
   alarm_name          = "high-cpu-alarm"
   comparison_operator = "GreaterThanOrEqualToThreshold"
